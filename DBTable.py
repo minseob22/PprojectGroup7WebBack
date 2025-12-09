@@ -23,7 +23,7 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id")) # 담당 의사
     name = Column(String, index=True)
-    birth_date = Column(String) # YYYY-MM-DD
+    birthDate = Column(String) # YYYY-MM-DD
     gender = Column(String)     # M/F
     medical_history = Column(Text, nullable=True) # 기저질환 등
     created_at = Column(DateTime, default=datetime.now)
