@@ -16,56 +16,56 @@ import os
 import json
 from typing import Dict, Any
 from openai import OpenAI
+from pathlib import Path
 
 # ============================
 # 0. OpenAI 클라이언트
 # ============================
 
-# 환경변수 OPENAI_API_KEY 에 키를 넣어두고 사용
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+def _create_client() -> OpenAI:
+    """
+    OPENAI_API_KEY 환경변수가 없으면 바로 에러를 던져서
+    왜 안 되는지 한 번에 알 수 있게 함.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "환경변수 OPENAI_API_KEY가 설정되어 있지 않습니다.\n"
+            "PowerShell 예시:  setx OPENAI_API_KEY \"실제_API_키\"\n"
+            "새 터미널을 연 뒤에 다시 실행해주세요."
+        )
+    return OpenAI(api_key=api_key)
+
+client = _create_client()
 
 # ============================
 # 1. TB & Radiomics 지식베이스
 # ============================
 
-KB_TEXT = """
-[Basic TB Knowledge – WHO]
-- 결핵(Tuberculosis, TB)은 결핵균(Mycobacterium tuberculosis)에 의해 발생하는 공기 매개 감염 질환이다.
-- WHO 자료에 따르면 결핵은 여전히 전 세계 주요 사망 원인 중 하나지만, 예방과 치료가 가능한 질환이다.
-- 표준 치료는 대개 4~6개월 이상 항결핵제 복용이 필요하며, 중간에 자의로 중단할 경우 내성 결핵(MDR-TB) 위험이 증가한다.
-- 위험군: HIV 감염자, 당뇨병 환자, 영양실조 상태, 흡연자 등은 결핵 발병 위험이 높다.
+def load_kb_text() -> str:
+    """
+    같은 폴더에 있는 tb_1.txt ~ tb_8.txt를 순서대로 읽어서
+    하나의 긴 텍스트로 합친다.
+    """
+    base_dir = Path(__file__).parent
+    parts = []
+    for i in range(1, 9):  # tb_1.txt ~ tb_8.txt
+        path = base_dir / f"tb_{i}.txt"
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                parts.append(f.read())
 
-[Latent vs Active TB – CDC]
-- 잠복 결핵(Latent TB): 몸 안에 결핵균이 있지만 비활성 상태로, 증상이 없고 전염성도 없다.
-- 활동성 결핵(Active TB): 기침(3주 이상), 발열, 체중 감소, 식욕 부진, 피 섞인 가래(객혈) 등의 증상이 나타나며 전염성이 있다.
-- 전파 경로: 활동성 환자가 기침, 재채기를 할 때 공기 중으로 퍼진 미세한 비말을 통해 감염된다.
-- 일반적으로 옷, 식기, 화장실 공유만으로는 결핵이 전염되지는 않는다.
+    kb_text = "\n\n".join(parts).strip()
 
-[Chest X-ray Findings in TB – Radiology Assistant 등]
-- 활동성 TB(Active): 상폐야(upper lobe) 중심의 침윤, 공동(cavity), tree-in-bud 패턴(작은 결절이 나뭇가지 모양으로 퍼진 양상) 등이 대표적인 소견이다.
-- 비활동성 TB(Inactive): 석회화된 결절(calcified nodule), 섬유화(fibrosis), 흉막 비후(pleural thickening) 등이 보일 수 있다.
-- 특히 tree-in-bud 패턴은 활동성 결핵을 강하게 시사하는 소견으로 알려져 있다.
+    # 혹시 파일이 하나도 없을 때를 대비한 안전장치
+    if not kb_text:
+        kb_text = (
+            "[주의] TB 지식베이스 파일(tb_1.txt ~ tb_8.txt)을 찾지 못했습니다. "
+            "이 메시지는 디버깅용이며, 실제 서비스 시에는 해당 파일들을 반드시 준비해야 합니다."
+        )
+    return kb_text
 
-[Fleischner Society Pulmonary Nodule Guidelines (요약)]
-- 고형(solid) 폐결절 크기에 따른 추적 권고(저위험군 기준 예시):
-  - 6mm 미만: 추가 추적 CT가 필요하지 않을 수 있다.
-  - 6~8mm: 대개 6~12개월 후 CT 추적 검사를 고려한다.
-  - 8mm 이상: 3개월 이내 CT, PET-CT 또는 조직 검사를 포함한 적극적인 평가를 권고한다.
-- 부분고형(subsolid) 결절은 성장 속도가 느리고 악성 가능성이 있어, 더 긴 기간(최대 5년)까지 장기 추적이 필요할 수 있다.
-- 최종 결정은 환자의 위험인자(흡연력, 나이, 기저질환)를 함께 고려하여 전문의가 판단한다.
-
-[Radiomics in TB & Lung Disease]
-- Radiomics는 CT나 X-ray 영상에서 사람 눈에 보이지 않는 미세한 텍스처, 모양, 강도 분포 등의 수치를 추출하여 질병의 특성을 정량화하는 기법이다.
-- 몇몇 연구에서는 chest X-ray 기반 Radiomics 점수(RadScore 등)가 결핵 치료 반응 모니터링에 유용하며,
-  치료가 잘 될수록 특정 텍스처 값이 감소하는 경향을 보인다고 보고한다.
-- 다른 연구에서는 결절 모양, tree-in-bud 패턴과 관련된 Radiomics feature를 이용해 다제내성 결핵(MDR-TB)의 가능성을 예측하려는 시도도 있다.
-- 이러한 Radiomics 분석은 육안 판독만으로는 구분하기 어려운 패턴을 반영하므로, 임상적 판단을 보조하는 참고 자료로 활용될 수 있다.
-
-[주의 사항]
-- 위 지식은 대규모 가이드라인 및 연구를 요약한 것으로, 개별 환자에게 그대로 적용하기보다는
-  위험도 평가와 추가 검사 필요성을 판단하는 참고 정보로 사용해야 한다.
-- 최종 진단과 치료 결정은 반드시 흉부 영상의학과 및 호흡기내과 전문의를 포함한 의료진이 내려야 한다.
-"""
+KB_TEXT = load_kb_text()
 
 # ============================
 # 2. 시스템 프롬프트
@@ -149,15 +149,14 @@ def build_user_prompt(case_json: Dict[str, Any], kb_text: str = KB_TEXT) -> str:
 
 응답 형식(JSON):
 
-{
+{{
   "doctor_summary": "string",
   "patient_friendly": "string",
   "risk_level": "low | moderate | high",
   "recommendations": ["string", "string", "..."],
   "disclaimer": "string"
-}
+}}
 """
-
 
 # ============================
 # 4. 메인 함수: JSON -> LLM -> 리포트
@@ -187,6 +186,9 @@ def generate_radiomics_report(
         ],
         temperature=temperature,
         max_tokens=max_tokens,
+        # gpt-4.1-mini는 structured outputs 지원하므로 JSON 모드 사용 가능
+        # (문자열이 아니라 JSON 오브젝트만 나오게 강제)
+        response_format={"type": "json_object"},
     )
 
     content = completion.choices[0].message.content.strip()
@@ -211,7 +213,6 @@ def generate_radiomics_report(
         result["recommendations"] = [result["recommendations"]]
 
     return result
-
 
 # ============================
 # 5. 단독 실행 테스트용
