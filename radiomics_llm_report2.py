@@ -68,6 +68,107 @@ def load_kb_text() -> str:
 KB_TEXT = load_kb_text()
 
 # ============================
+# 1-b. Radiomics 모델 학습 / 성능 컨텍스트
+# ============================
+
+# → 항상 LLM에 같이 들어가야 하는 전역 정보
+MODEL_INFO = {
+    "dataset": {
+        "file": "outputs/radiomics/features_with_synthetic_normals.csv",
+        "samples": 430,
+        "features": 102,
+        "tb": 330,
+        "normal": 100,
+        "note": "Normal 100 samples are synthetic; analysis only, not clinical."
+    },
+    "logreg": {
+        "roc_auc": 1.0,
+        "report": {
+            "0": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 20.0
+            },
+            "1": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 66.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 86.0
+            },
+            "weighted avg": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 86.0
+            }
+        }
+    },
+    "random_forest": {
+        "roc_auc": 1.0,
+        "report": {
+            "0": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 20.0
+            },
+            "1": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 66.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 86.0
+            },
+            "weighted avg": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 86.0
+            }
+        },
+        "feature_importance_top10": [
+            {"feature": "original_glcm_Imc1", "importance": 0.22146515262089497},
+            {"feature": "original_firstorder_Maximum", "importance": 0.09920766439252111},
+            {"feature": "original_firstorder_Range", "importance": 0.09046836293554351},
+            {"feature": "original_glcm_Imc2", "importance": 0.09046461237081396},
+            {"feature": "original_glcm_Idmn", "importance": 0.08295208563768676},
+            {"feature": "original_glcm_Idn", "importance": 0.0776288087458565},
+            {"feature": "original_glszm_ZoneEntropy", "importance": 0.04313120124481508},
+            {"feature": "original_glcm_MCC", "importance": 0.036601263782084933},
+            {"feature": "original_firstorder_Minimum", "importance": 0.025533780704809675},
+            {"feature": "original_glszm_SmallAreaEmphasis", "importance": 0.017861450200795617}
+        ],
+        "group_importance": {
+            "firstorder": 0.2396907092672334,
+            "glcm": 0.5722353732746164,
+            "glrlm": 0.042304072164474696,
+            "glszm": 0.07950720366207635,
+            "gldm": 0.030843772974466065,
+            "ngtdm": 0.017670140370472022,
+            "shape2D": 0.017748728286661283
+        }
+    },
+    "disclaimer": [
+        "Synthetic normals used; external validation required.",
+        "Not for clinical decision-making."
+    ]
+}
+
+# ============================
 # 2. 시스템 프롬프트
 # ============================
 
@@ -107,16 +208,26 @@ def build_user_prompt(case_json: Dict[str, Any], kb_text: str = KB_TEXT) -> str:
 {kb_text}
 [END_OF_KNOWLEDGE_BASE]
 
+[MODEL_TRAINING_AND_PERFORMANCE]
+아래 JSON은 현재 Radiomics + 머신러닝 모델이 어떤 데이터셋으로 학습되었고,
+어떤 지표(ROC-AUC, classification report), 어떤 feature group을 중요하게 보고 있는지에 대한 요약 정보입니다.
+특히 normal 100개 샘플이 synthetic 이라는 점과,
+이 모델이 아직 연구/분석용이며 임상 의사결정에 직접 사용되면 안 된다는 제한점을 반영해야 합니다.
+
+{json.dumps(MODEL_INFO, ensure_ascii=False, indent=2)}
+[END_OF_MODEL_TRAINING_AND_PERFORMANCE]
+
 아래 JSON은 한 명의 환자 케이스에 대한 정보입니다.
 - patient: 나이, 성별, 흡연력, 주요 임상 증상 등
 - lesion_info: 병변 위치, 크기(mm), 개수, 형태(morphology) 등
 - ml_results: Radiomics + 머신러닝 기반 예측 결과 (주요 라벨, 확률, 위험도 점수 등)
+- radiomics_features: 원본 이미지에서 추출된 Radiomics feature 벡터 (optional)
 
 [CASE_JSON]
 {json.dumps(case_json, ensure_ascii=False, indent=2)}
 [END_OF_CASE_JSON]
 
-위의 지식베이스와 JSON을 바탕으로, 아래 요구사항을 모두 한국어로 작성하세요.
+위의 지식베이스, 모델 정보, 케이스 JSON을 바탕으로, 아래 요구사항을 모두 한국어로 작성하세요.
 반드시 지정된 JSON 형식으로만 응답해야 합니다. 추가 설명 문장은 넣지 마세요.
 
 요구사항:
@@ -130,7 +241,7 @@ def build_user_prompt(case_json: Dict[str, Any], kb_text: str = KB_TEXT) -> str:
 2. patient_friendly:
    - 환자 또는 보호자가 이해하기 쉬운 설명입니다.
    - 의학 용어는 가능한 풀어서 설명하고, 현재 결과가 의미하는 바와
-     왜 추가 검사가 필요할 수 있는지 차분하게 설명하세요.
+   - 왜 추가 검사가 필요할 수 있는지 차분하게 설명하세요.
    - 과도한 공포를 유발하지 않되, 필요한 경각심은 유지하세요.
 
 3. risk_level:
@@ -146,6 +257,8 @@ def build_user_prompt(case_json: Dict[str, Any], kb_text: str = KB_TEXT) -> str:
    - 이 결과는 Radiomics 기반 AI 모델과 제한된 지식베이스를 바탕으로 한
      연구용/보조용 도구에 불과하며, 최종 진단과 치료 결정은 반드시
      담당 의사(전문의)가 내려야 한다는 점을 명시하세요.
+   - 또한, Radiomics 모델은 synthetic normal 데이터를 포함한 연구용 모델이므로,
+     임상 현장에서는 외부 검증을 거친 뒤 참고 자료로만 활용해야 합니다.
 
 응답 형식(JSON):
 
@@ -186,8 +299,6 @@ def generate_radiomics_report(
         ],
         temperature=temperature,
         max_tokens=max_tokens,
-        # gpt-4.1-mini는 structured outputs 지원하므로 JSON 모드 사용 가능
-        # (문자열이 아니라 JSON 오브젝트만 나오게 강제)
         response_format={"type": "json_object"},
     )
 
@@ -250,7 +361,9 @@ if __name__ == "__main__":
                 {"label": "inflammatory_lesion", "probability": 0.10}
             ],
             "risk_score": 0.80
-        }
+        },
+        # Radiomics feature 벡터가 있으면 이렇게 붙이면 됨 (예시)
+        # "radiomics_features": {...}
     }
 
     print(">> Radiomics + TB LLM report demo 실행 중...\n")
